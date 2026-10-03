@@ -1,99 +1,127 @@
 // 入口。共通部分（kit）・ルール（game）・画面（ui）をつなぐ。
-import { chooseMove } from './game/cpu';
-import { applyMove, createInitialState, type State } from './game/rules';
+import './ui/style.css';
+import { confirmRule, createInitialState, press, tick, type Say, type State } from './game/rules';
 import { createSound } from './kit/audio';
+import { createLoop } from './kit/loop';
 import { loadPlatform } from './kit/platform';
-import { createRng } from './kit/rng';
+import { createRng, type Rng } from './kit/rng';
 import { createSave } from './kit/save';
-import { fitCanvas } from './kit/scale';
-import { cellAt, draw, VIEW } from './ui/render';
+import { buildKeys, getDom, render, type Screen } from './ui/render';
 
-const CPU_DELAY_MS = 350;
+/** 画面が切り替わった直後は、この間だけ下のボタンを押せない（数字を連打した指で、読まずに進めないように） */
+const PANEL_WAIT_MS = 600;
+const FLASH_MS = 140;
 
 async function start(): Promise<void> {
-  const canvas = document.getElementById('game') as HTMLCanvasElement;
-  const status = document.getElementById('status') as HTMLElement;
-  const muteButton = document.getElementById('mute') as HTMLButtonElement;
-  const ctx = canvas.getContext('2d')!;
+  const dom = getDom();
 
   const platform = await loadPlatform();
   await platform.init();
 
-  const rng = createRng();
   const sound = createSound();
-  const save = createSave('web-game-template.v1', { wins: 0, losses: 0, draws: 0, muted: false });
+  const save = createSave('rule-stack.v1', { best: 0, muted: false });
   const record = save.load();
   sound.setMuted(record.muted);
 
+  let rng: Rng = createRng();
   let state: State = createInitialState();
-  let busy = false; // CPU の番・広告の間は入力を受けない
+  let screen: Screen = 'title';
+  let busy = false; // 広告の間は入力を受けない
 
-  const render = () => {
-    draw(ctx, state);
-    const result = { p1: 'あなたの勝ち', p2: 'CPU の勝ち', draw: '引き分け' } as const;
-    status.textContent = state.winner
-      ? `${result[state.winner]} — クリックで次の対局（${record.wins}勝 ${record.losses}敗 ${record.draws}分）`
-      : state.turn === 'p1' ? 'あなたの番' : 'CPU の番';
-    muteButton.textContent = sound.muted ? '音: 切' : '音: 入';
+  const flash = (button: HTMLButtonElement | undefined, className: string) => {
+    if (!button) return;
+    button.classList.add(className);
+    setTimeout(() => button.classList.remove(className), FLASH_MS);
   };
 
-  const fit = fitCanvas(canvas, VIEW, render);
-
-  const finishIfOver = () => {
-    if (!state.winner) return;
-    if (state.winner === 'p1') record.wins++;
-    else if (state.winner === 'p2') record.losses++;
-    else record.draws++;
-    save.save(record);
-    sound.tone(state.winner === 'p1' ? 880 : 220, 300);
+  const finish = () => {
+    if (state.cleared > record.best) {
+      record.best = state.cleared;
+      save.save(record);
+    }
+    sound.tone(140, 450, 0.3);
     platform.gameplayStop();
   };
 
-  const play = (index: number) => {
-    const next = applyMove(state, index);
-    if (next === state) return false;
-    state = next;
-    sound.tone(state.turn === 'p2' ? 520 : 390, 80);
-    finishIfOver();
-    render();
-    return true;
-  };
-
-  const restart = async () => {
-    busy = true;
-    await platform.commercialBreak();
-    state = createInitialState();
-    busy = false;
-    platform.gameplayStart();
-    render();
-  };
-
-  canvas.addEventListener('pointerdown', (e) => {
-    if (busy) return;
-    if (state.winner) {
-      void restart();
+  const onPress = (say: Say) => {
+    if (busy || screen !== 'game' || state.phase !== 'play') return;
+    const before = state;
+    state = press(state, say, rng);
+    if (state.phase === 'over') {
+      flash(keys.get(say), 'miss');
+      finish();
       return;
     }
-    const { x, y } = fit.toLogical(e.clientX, e.clientY);
-    const index = cellAt(x, y);
-    if (index === null || !play(index) || state.winner) return;
-    busy = true;
-    setTimeout(() => {
-      play(chooseMove(state, rng));
+    flash(keys.get(say), 'hit');
+    if (state.cleared > before.cleared) sound.tone(880, 220, 0.2);
+    else sound.tone(440 + before.pos * 30, 60, 0.12);
+  };
+
+  const keys = buildKeys(dom, onPress);
+
+  const begin = async () => {
+    if (busy) return;
+    if (screen === 'game' && state.phase === 'over') {
+      busy = true;
+      await platform.commercialBreak();
       busy = false;
-    }, CPU_DELAY_MS);
+    }
+    rng = createRng();
+    state = createInitialState();
+    screen = 'game';
+    platform.gameplayStart();
+  };
+
+  const onPanelButton = () => {
+    if (dom.panelButton.disabled) return;
+    if (screen === 'game' && state.phase === 'rule') state = confirmRule(state);
+    else void begin();
+  };
+  dom.panelButton.addEventListener('click', onPanelButton);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!dom.panel.hidden) onPanelButton();
+      return;
+    }
+    const say: Say | null =
+      e.key >= '1' && e.key <= '9' ? Number(e.key) : e.key === '0' ? 10 : e.key === ' ' || e.key === '*' ? 'star' : null;
+    if (say === null) return;
+    e.preventDefault();
+    onPress(say);
   });
 
-  muteButton.addEventListener('click', () => {
+  const showMute = () => {
+    dom.mute.textContent = sound.muted ? '音: 切' : '音: 入';
+  };
+  dom.mute.addEventListener('click', () => {
     sound.setMuted(!sound.muted);
     record.muted = sound.muted;
     save.save(record);
-    render();
+    showMute();
   });
+  showMute();
+
+  const update = () => {
+    if (screen !== 'game' || state.phase !== 'play') return;
+    state = tick(state);
+    if (state.phase === 'over') finish();
+  };
+
+  const draw = () => {
+    const panelChanged = render(dom, { screen, state, best: record.best });
+    if (panelChanged && screen === 'game') {
+      dom.panelButton.disabled = true;
+      setTimeout(() => {
+        dom.panelButton.disabled = false;
+      }, PANEL_WAIT_MS);
+    }
+  };
 
   platform.loadingFinished();
-  platform.gameplayStart();
-  render();
+  createLoop({ update, render: draw }).start();
 }
 
 void start();
