@@ -86,7 +86,7 @@ function fillPanel(dom: Dom, view: View): void {
       el('h1', 'RULE STACK'),
       el('p', '1 から 10 まで、順に押す。'),
       el('p', '1周するたびにルールが1つ増える。ルールは消えない。'),
-      el('p', '「2 の代わりに 5」でも、5 の番は 5 のまま。'),
+      el('p', 'ルールは重なる。「4 の代わりに 6」の後に「6 と 1 を入れ替える」が来たら、4 の番は 1。'),
     );
     button = 'スタート';
   } else if (state.phase === 'rule') {

@@ -11,15 +11,16 @@ export const NUMBERS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export type Say = number | 'star';
 
 /**
- * 積み上がるルール。a・b は「本物の数字」（数える順番の中での数字）を指す。
- * 「2 の代わりに 5」があっても、本物の 5 の番では 5 のまま。
+ * 積み上がるルール。a・b は「その時に言っている数字」を指す。
+ * 「2 の代わりに 5」があっても、元から 5 だった番は 5 のまま。
+ * その後に「5 は2回」が来たら、5 と言う番（元の 2 の番と 5 の番）が両方2回になる。
  */
 export type Rule =
-  | { kind: 'replace'; a: number; b: number } // a の番で b と言う
-  | { kind: 'skip'; a: number } // a の番を飛ばす
-  | { kind: 'double'; a: number } // a の番を2回続ける
-  | { kind: 'swap'; a: number; b: number } // a の番と b の番を入れ替える
-  | { kind: 'star'; a: number }; // a の番で ★ と言う
+  | { kind: 'replace'; a: number; b: number } // a と言う所で b と言う
+  | { kind: 'skip'; a: number } // a と言う所を飛ばす
+  | { kind: 'double'; a: number } // a と言う所を2回続ける
+  | { kind: 'swap'; a: number; b: number } // a と言う所で b、b と言う所で a と言う
+  | { kind: 'star'; a: number }; // a と言う所で ★ と言う
 
 /** 1周の中の1つの番。count は本物の数字、say はその番で押すもの */
 export interface Slot {
@@ -50,7 +51,24 @@ export interface State {
 }
 
 /** 種類ごとの上限。飛ばす番が多すぎると、1周が短くなりすぎる */
-const MAX_OF: Record<Rule['kind'], number> = { replace: 10, skip: 2, double: 2, swap: 2, star: 2 };
+const MAX_OF: Record<Rule['kind'], number> = { replace: 10, skip: 2, double: 2, swap: 3, star: 2 };
+/** 1周の長さの範囲。これを外れるルールは足さない */
+const MIN_LENGTH = 6;
+const MAX_LENGTH = 14;
+/**
+ * 1周に出てくるものの種類の下限と、同じものが出てくる回数の上限。
+ * ルールが重なり続けると、1周が ★ や同じ数字ばかりになり、覚えなくても押せてしまう
+ */
+const MIN_DISTINCT = 6;
+const MAX_SAME = 4;
+
+/** ルールを足した後の1周が、遊べる形になっているか */
+function isPlayable(slots: readonly Slot[]): boolean {
+  if (slots.length < MIN_LENGTH || slots.length > MAX_LENGTH) return false;
+  const counts = new Map<Say, number>();
+  for (const slot of slots) counts.set(slot.say, (counts.get(slot.say) ?? 0) + 1);
+  return counts.size >= MIN_DISTINCT && Math.max(...counts.values()) <= MAX_SAME;
+}
 
 /** 1回押すまでの持ち時間（刻み）。最初は 10 秒で、周が進むほど短くなり、5 秒で止まる */
 export function limitFor(lap: number): number {
@@ -58,75 +76,90 @@ export function limitFor(lap: number): number {
 }
 
 /**
- * ルールの文に出てくる数字。1つの数字が出てくるルールは1つまで。
- * 「4 の代わりに 6」の 6 も数える。そうしないと、後から「6 と 1 を入れ替える」が来た時に、
- * 4 の番で押すのが 6 なのか 1 なのか、文からは決まらなくなる。
+ * ルールを全部掛けた後の、1周で押す順番。
+ * ルールは足された順に掛ける。数字は「その時に言っている数字」を指すので、
+ * 後のルールは、前のルールで変わった後の数字に効く。
+ * 例：「4 の代わりに 6」→「6 と 1 を入れ替える」なら、4 の番は 6 になった後、1 になる。
  */
-export function usedNumbers(rules: readonly Rule[]): Set<number> {
-  const used = new Set<number>();
-  for (const rule of rules) {
-    used.add(rule.a);
-    if (rule.kind === 'swap' || rule.kind === 'replace') used.add(rule.b);
-  }
-  return used;
-}
-
-/** ルールを全部掛けた後の、1周で押す順番 */
 export function buildSequence(rules: readonly Rule[]): Slot[] {
   let slots: Slot[] = NUMBERS.map((n) => ({ count: n, say: n }));
   for (const rule of rules) {
     switch (rule.kind) {
       case 'replace':
-        slots = slots.map((s) => (s.count === rule.a ? { ...s, say: rule.b } : s));
+        slots = slots.map((s) => (s.say === rule.a ? { ...s, say: rule.b } : s));
         break;
       case 'star':
-        slots = slots.map((s) => (s.count === rule.a ? { ...s, say: 'star' as const } : s));
+        slots = slots.map((s) => (s.say === rule.a ? { ...s, say: 'star' as const } : s));
         break;
       case 'skip':
-        slots = slots.filter((s) => s.count !== rule.a);
+        slots = slots.filter((s) => s.say !== rule.a);
         break;
       case 'double':
-        slots = slots.flatMap((s) => (s.count === rule.a ? [s, s] : [s]));
+        slots = slots.flatMap((s) => (s.say === rule.a ? [s, s] : [s]));
         break;
-      case 'swap': {
-        const i = slots.findIndex((s) => s.count === rule.a);
-        const j = slots.findIndex((s) => s.count === rule.b);
-        if (i >= 0 && j >= 0) {
-          const next = slots.slice();
-          [next[i], next[j]] = [next[j]!, next[i]!];
-          slots = next;
-        }
+      case 'swap':
+        slots = slots.map((s) =>
+          s.say === rule.a ? { ...s, say: rule.b } : s.say === rule.b ? { ...s, say: rule.a } : s,
+        );
         break;
-      }
     }
   }
   return slots;
 }
 
-/** 次に足すルール。作れるルールが残っていなければ null（それ以上は増えない） */
+/** これまでのルールが「変える側」として指した数字（「4 の代わりに 6」なら 4。入れ替えは両方） */
+export function subjectNumbers(rules: readonly Rule[]): Set<number> {
+  const subjects = new Set<number>();
+  for (const rule of rules) {
+    subjects.add(rule.a);
+    if (rule.kind === 'swap') subjects.add(rule.b);
+  }
+  return subjects;
+}
+
+/**
+ * 次に足すルール。作れるルールが残っていなければ null（それ以上は増えない）。
+ * - 指す数字は、今だれかが言っている数字（言われていない数字を指すと、何も起きないルールになる）
+ * - 「代わりに言う」の言う側には、前のルールが変える数字を使わない。
+ *   「6 と 1 を入れ替える」の後に「4 の代わりに 6」が来ると、4 の番が 6 なのか 1 なのか迷うため
+ *   （ルールは足された順に掛けるので答えは 6 だが、読む側には分かりにくい）
+ */
 export function createRule(rules: readonly Rule[], rng: Rng): Rule | null {
-  const used = usedNumbers(rules);
-  const free = NUMBERS.filter((n) => !used.has(n));
+  const said = NUMBERS.filter((n) => buildSequence(rules).some((s) => s.say === n));
+  const subjects = subjectNumbers(rules);
   const countOf = (kind: Rule['kind']) => rules.filter((r) => r.kind === kind).length;
-  // 「代わりに言う」と「入れ替え」は、まだ出ていない数字を2つ使う
-  const needs = (kind: Rule['kind']) => (kind === 'replace' || kind === 'swap' ? 2 : 1);
+  // 同じルールをもう一度出さない（入れ替えは、逆の並びも同じとみなす）
+  const sameRule = (rule: Rule) =>
+    rules.some((r) =>
+      r.kind === 'swap' && rule.kind === 'swap'
+        ? (r.a === rule.a && r.b === rule.b) || (r.a === rule.b && r.b === rule.a)
+        : r.kind === rule.kind && r.a === rule.a,
+    );
 
   // 1つ目は必ず「代わりに言う」。このゲームの肝なので最初に見せる
   const kinds: Rule['kind'][] = rules.length === 0
     ? ['replace']
-    : (['replace', 'skip', 'double', 'swap', 'star'] as const).filter(
-        (kind) => countOf(kind) < MAX_OF[kind] && free.length >= needs(kind),
-      );
-  if (kinds.length === 0) return null;
-  const kind = rng.pick(kinds);
-  const a = rng.pick(free);
-  switch (kind) {
-    case 'replace':
-    case 'swap':
-      return { kind, a, b: rng.pick(free.filter((n) => n !== a)) };
-    default:
-      return { kind, a };
+    : (['replace', 'skip', 'double', 'swap', 'star'] as const).filter((kind) => countOf(kind) < MAX_OF[kind]);
+  if (kinds.length === 0 || said.length < 2) return null;
+
+  for (let tries = 0; tries < 40; tries++) {
+    const kind = rng.pick(kinds);
+    const a = rng.pick(said);
+    let rule: Rule;
+    if (kind === 'replace') {
+      const targets = NUMBERS.filter((n) => n !== a && !subjects.has(n));
+      if (targets.length === 0) continue;
+      rule = { kind, a, b: rng.pick(targets) };
+    } else if (kind === 'swap') {
+      rule = { kind, a, b: rng.pick(said.filter((n) => n !== a)) };
+    } else {
+      rule = { kind, a };
+    }
+    if (sameRule(rule)) continue;
+    if (!isPlayable(buildSequence([...rules, rule]))) continue;
+    return rule;
   }
+  return null;
 }
 
 export function ruleText(rule: Rule): string {

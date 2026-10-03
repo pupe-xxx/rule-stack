@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildSequence, confirmRule, createInitialState, createRule, expected, limitFor, NUMBERS, press, ruleText, tick,
-  usedNumbers, type Rule, type State,
+  buildSequence, confirmRule, createInitialState, createRule, expected, limitFor, press, ruleText, subjectNumbers, tick,
+  type Rule, type State,
 } from '../src/game/rules';
 import { createRng } from '../src/kit/rng';
 
@@ -42,6 +42,25 @@ describe('1周で押す順番', () => {
     expect(says(rules)).toEqual([1, 5, 8, 5, 6, 7, 7, 4, 'star', 10]);
   });
 
+  it('ルールは重なる：後のルールは、前のルールで変わった後の数字に効く', () => {
+    // 4 の番は 6 になった後、入れ替えで 1 になる。元の 6 の番も 1、元の 1 の番は 6
+    expect(says([{ kind: 'replace', a: 4, b: 6 }, { kind: 'star', a: 9 }, { kind: 'swap', a: 6, b: 1 }]))
+      .toEqual([6, 2, 3, 1, 5, 1, 7, 8, 'star', 10]);
+    // 5 と言う番（元の 2 の番と 5 の番）が、両方2回になる
+    expect(says([{ kind: 'replace', a: 2, b: 5 }, { kind: 'double', a: 5 }]))
+      .toEqual([1, 5, 5, 3, 4, 5, 5, 6, 7, 8, 9, 10]);
+    // 5 と言う番が、両方飛ばされる
+    expect(says([{ kind: 'replace', a: 2, b: 5 }, { kind: 'skip', a: 5 }])).toEqual([1, 3, 4, 6, 7, 8, 9, 10]);
+    // 代わりに言うが続く：2 → 5 → 8
+    expect(says([{ kind: 'replace', a: 2, b: 5 }, { kind: 'replace', a: 5, b: 8 }]))
+      .toEqual([1, 8, 3, 4, 8, 6, 7, 8, 9, 10]);
+  });
+
+  it('掛ける順番で答えが変わる（前のルールは、後のルールの結果には効かない）', () => {
+    expect(says([{ kind: 'swap', a: 6, b: 1 }, { kind: 'replace', a: 4, b: 6 }]))
+      .toEqual([6, 2, 3, 6, 5, 1, 7, 8, 9, 10]);
+  });
+
   it('説明の文', () => {
     expect(ruleText({ kind: 'replace', a: 2, b: 5 })).toBe('2 の代わりに 5');
     expect(ruleText({ kind: 'swap', a: 4, b: 8 })).toBe('4 と 8 を入れ替える');
@@ -53,38 +72,52 @@ describe('ルールの足し方', () => {
     for (let seed = 1; seed <= 50; seed++) expect(createRule([], createRng(seed))!.kind).toBe('replace');
   });
 
-  it('1つの数字が出てくるルールは1つまで。作れるルールが無くなったら増えない', () => {
+  it('足されるルールは必ず効き、迷う組み合わせにならず、1周の長さが範囲に収まる', () => {
+    let overlaps = 0;
     for (let seed = 1; seed <= 300; seed++) {
       const rng = createRng(seed);
       const rules: Rule[] = [];
       for (;;) {
         const rule = createRule(rules, rng);
         if (!rule) break;
-        const before = usedNumbers(rules);
-        expect(before.has(rule.a)).toBe(false);
-        if (rule.kind === 'swap' || rule.kind === 'replace') {
-          expect(before.has(rule.b)).toBe(false);
+        const before = says(rules);
+        // 指す数字は、今だれかが言っている数字
+        expect(before).toContain(rule.a);
+        if (rule.kind === 'swap') {
+          expect(before).toContain(rule.b);
           expect(rule.b).not.toBe(rule.a);
         }
+        // 「代わりに言う」の言う側は、前のルールが変える数字ではない
+        if (rule.kind === 'replace') {
+          expect(subjectNumbers(rules).has(rule.b)).toBe(false);
+          expect(rule.b).not.toBe(rule.a);
+        }
+        if (before.filter((say) => say === rule.a).length > 1) overlaps++;
         rules.push(rule);
-        expect(buildSequence(rules).length).toBeGreaterThanOrEqual(8);
+        // 足した後、押す順番が実際に変わっている
+        expect(says(rules)).not.toEqual(before);
+        expect(says(rules).length).toBeGreaterThanOrEqual(6);
+        expect(says(rules).length).toBeLessThanOrEqual(14);
+        // 同じものばかりの1周にならない
+        const tally = new Map<unknown, number>();
+        for (const say of says(rules)) tally.set(say, (tally.get(say) ?? 0) + 1);
+        expect(tally.size).toBeGreaterThanOrEqual(6);
+        expect(Math.max(...tally.values())).toBeLessThanOrEqual(4);
       }
-      // ルールの文に出てくる数字を全部並べると、同じ数字は2回出てこない
-      const mentioned = rules.flatMap((r) => (r.kind === 'swap' || r.kind === 'replace' ? [r.a, r.b] : [r.a]));
-      expect(new Set(mentioned).size).toBe(mentioned.length);
-      expect(usedNumbers(rules).size).toBeGreaterThanOrEqual(NUMBERS.length - 1);
       expect(rules.length).toBeGreaterThanOrEqual(5);
       expect(rules.filter((r) => r.kind === 'skip').length).toBeLessThanOrEqual(2);
+      expect(new Set(rules.map(ruleText)).size).toBe(rules.length);
     }
+    // 重なるルール（2つ以上の番に同時に効くルール）が実際に出ている
+    expect(overlaps).toBeGreaterThan(100);
   });
 
-  it('「4 の代わりに 6」の後に、6 を動かすルールは来ない', () => {
+  it('「4 の代わりに 6」の後に、6 を指すルールが来る', () => {
     const first: Rule = { kind: 'replace', a: 4, b: 6 };
-    for (let seed = 1; seed <= 300; seed++) {
-      const rule = createRule([first], createRng(seed))!;
-      expect([rule.a, 'b' in rule ? rule.b : 0]).not.toContain(6);
-      expect([rule.a, 'b' in rule ? rule.b : 0]).not.toContain(4);
-    }
+    const next = Array.from({ length: 300 }, (_, i) => createRule([first], createRng(i + 1))!);
+    expect(next.some((rule) => rule.a === 6 || ('b' in rule && rule.kind === 'swap' && rule.b === 6))).toBe(true);
+    // もう誰も言っていない 4 を指すルールは来ない
+    expect(next.some((rule) => rule.a === 4 || (rule.kind === 'swap' && rule.b === 4))).toBe(false);
   });
 });
 
@@ -134,12 +167,12 @@ describe('進み方', () => {
     expect(limitFor(100)).toBe(300);
   });
 
-  it('同じ種なら同じルールが同じ順に足される。数字を使い切った後も続けられる', () => {
+  it('同じ種なら同じルールが同じ順に足される。ルールが打ち止めになった後も続けられる', () => {
     expect(playLaps(42, 15)).toEqual(playLaps(42, 15));
     expect(playLaps(1, 6).rules).not.toEqual(playLaps(2, 6).rules);
-    const late = playLaps(7, 20);
-    expect(late.cleared).toBe(20);
-    expect(late.rules.length).toBeLessThanOrEqual(10);
+    const late = playLaps(7, 30);
+    expect(late.cleared).toBe(30);
+    expect(late.rules.length).toBeLessThanOrEqual(19);
     expect(late.phase).toBe('play');
   });
 });
