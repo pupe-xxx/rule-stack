@@ -53,8 +53,8 @@ describe('ルールの足し方', () => {
     for (let seed = 1; seed <= 50; seed++) expect(createRule([], createRng(seed))!.kind).toBe('replace');
   });
 
-  it('1つの数字に掛かるルールは1つまで。数字を使い切ったら増えない', () => {
-    for (let seed = 1; seed <= 100; seed++) {
+  it('1つの数字が出てくるルールは1つまで。作れるルールが無くなったら増えない', () => {
+    for (let seed = 1; seed <= 300; seed++) {
       const rng = createRng(seed);
       const rules: Rule[] = [];
       for (;;) {
@@ -62,16 +62,28 @@ describe('ルールの足し方', () => {
         if (!rule) break;
         const before = usedNumbers(rules);
         expect(before.has(rule.a)).toBe(false);
-        if (rule.kind === 'swap') {
+        if (rule.kind === 'swap' || rule.kind === 'replace') {
           expect(before.has(rule.b)).toBe(false);
           expect(rule.b).not.toBe(rule.a);
         }
-        if (rule.kind === 'replace') expect(rule.b).not.toBe(rule.a);
         rules.push(rule);
         expect(buildSequence(rules).length).toBeGreaterThanOrEqual(8);
       }
-      expect(usedNumbers(rules).size).toBe(NUMBERS.length);
+      // ルールの文に出てくる数字を全部並べると、同じ数字は2回出てこない
+      const mentioned = rules.flatMap((r) => (r.kind === 'swap' || r.kind === 'replace' ? [r.a, r.b] : [r.a]));
+      expect(new Set(mentioned).size).toBe(mentioned.length);
+      expect(usedNumbers(rules).size).toBeGreaterThanOrEqual(NUMBERS.length - 1);
+      expect(rules.length).toBeGreaterThanOrEqual(5);
       expect(rules.filter((r) => r.kind === 'skip').length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('「4 の代わりに 6」の後に、6 を動かすルールは来ない', () => {
+    const first: Rule = { kind: 'replace', a: 4, b: 6 };
+    for (let seed = 1; seed <= 300; seed++) {
+      const rule = createRule([first], createRng(seed))!;
+      expect([rule.a, 'b' in rule ? rule.b : 0]).not.toContain(6);
+      expect([rule.a, 'b' in rule ? rule.b : 0]).not.toContain(4);
     }
   });
 });
@@ -118,7 +130,8 @@ describe('進み方', () => {
 
   it('周が進むほど持ち時間が短くなり、下限で止まる', () => {
     expect(limitFor(1)).toBeGreaterThan(limitFor(8));
-    expect(limitFor(100)).toBe(150);
+    expect(limitFor(1)).toBe(600);
+    expect(limitFor(100)).toBe(300);
   });
 
   it('同じ種なら同じルールが同じ順に足される。数字を使い切った後も続けられる', () => {

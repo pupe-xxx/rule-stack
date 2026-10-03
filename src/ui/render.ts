@@ -106,6 +106,12 @@ function fillPanel(dom: Dom, view: View): void {
       el('div', `${state.cleared} 周`, 'score'),
       el('p', state.cleared > 0 && state.cleared >= view.best ? '最高記録' : `最高 ${view.best} 周`),
     );
+    // この周の正しい順番。間違えた番に印を付ける
+    const order = el('div', '', 'order');
+    state.sequence.forEach((slot, i) => {
+      order.append(el('span', sayText(slot.say), i === state.pos ? 'miss' : i < state.pos ? 'done' : ''));
+    });
+    body.push(el('p', 'この周の正しい順番'), order);
     if (state.rules.length > 0) {
       const list = document.createElement('ol');
       for (const rule of state.rules) list.append(el('li', ruleText(rule)));

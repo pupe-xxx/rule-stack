@@ -52,17 +52,21 @@ export interface State {
 /** 種類ごとの上限。飛ばす番が多すぎると、1周が短くなりすぎる */
 const MAX_OF: Record<Rule['kind'], number> = { replace: 10, skip: 2, double: 2, swap: 2, star: 2 };
 
-/** 1回押すまでの持ち時間（刻み）。周が進むほど短くなる */
+/** 1回押すまでの持ち時間（刻み）。最初は 10 秒で、周が進むほど短くなり、5 秒で止まる */
 export function limitFor(lap: number): number {
-  return Math.max(150, 320 - lap * 15);
+  return Math.max(300, 630 - lap * 30);
 }
 
-/** ルールがもう使っている数字。1つの数字に掛かるルールは1つまで（重なると答えが読み取れなくなる） */
+/**
+ * ルールの文に出てくる数字。1つの数字が出てくるルールは1つまで。
+ * 「4 の代わりに 6」の 6 も数える。そうしないと、後から「6 と 1 を入れ替える」が来た時に、
+ * 4 の番で押すのが 6 なのか 1 なのか、文からは決まらなくなる。
+ */
 export function usedNumbers(rules: readonly Rule[]): Set<number> {
   const used = new Set<number>();
   for (const rule of rules) {
     used.add(rule.a);
-    if (rule.kind === 'swap') used.add(rule.b);
+    if (rule.kind === 'swap' || rule.kind === 'replace') used.add(rule.b);
   }
   return used;
 }
@@ -99,24 +103,25 @@ export function buildSequence(rules: readonly Rule[]): Slot[] {
   return slots;
 }
 
-/** 次に足すルール。使える数字が残っていなければ null（それ以上は増えない） */
+/** 次に足すルール。作れるルールが残っていなければ null（それ以上は増えない） */
 export function createRule(rules: readonly Rule[], rng: Rng): Rule | null {
   const used = usedNumbers(rules);
   const free = NUMBERS.filter((n) => !used.has(n));
-  if (free.length === 0) return null;
   const countOf = (kind: Rule['kind']) => rules.filter((r) => r.kind === kind).length;
+  // 「代わりに言う」と「入れ替え」は、まだ出ていない数字を2つ使う
+  const needs = (kind: Rule['kind']) => (kind === 'replace' || kind === 'swap' ? 2 : 1);
 
   // 1つ目は必ず「代わりに言う」。このゲームの肝なので最初に見せる
   const kinds: Rule['kind'][] = rules.length === 0
     ? ['replace']
     : (['replace', 'skip', 'double', 'swap', 'star'] as const).filter(
-        (kind) => countOf(kind) < MAX_OF[kind] && (kind !== 'swap' || free.length >= 2),
+        (kind) => countOf(kind) < MAX_OF[kind] && free.length >= needs(kind),
       );
+  if (kinds.length === 0) return null;
   const kind = rng.pick(kinds);
   const a = rng.pick(free);
   switch (kind) {
     case 'replace':
-      return { kind, a, b: rng.pick(NUMBERS.filter((n) => n !== a)) };
     case 'swap':
       return { kind, a, b: rng.pick(free.filter((n) => n !== a)) };
     default:

@@ -111,6 +111,18 @@ html, body {
 #panel p { margin: 0; font-size: 17px; line-height: 1.7; color: #8fa8c7; }
 #panel .big { font-size: 34px; font-weight: 700; color: #ffd54f; line-height: 1.4; }
 #panel .score { font-size: 28px; font-weight: 700; color: #e3f2fd; }
+#panel .order { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+#panel .order span {
+  min-width: 30px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #16263c;
+  font-size: 18px;
+  font-weight: 700;
+  color: #8fa8c7;
+}
+#panel .order span.done { color: #66bb6a; }
+#panel .order span.miss { background: #7a2630; color: #ffffff; }
 #panel ol { margin: 0; padding-left: 1.6em; text-align: left; font-size: 17px; line-height: 1.8; color: #cfd8dc; }
 #panel-button {
   min-width: 200px;
