@@ -1,10 +1,14 @@
 import { NUMBERS, ruleText, sayText, type Say, type State } from '../game/rules';
 
 export type Screen = 'title' | 'game';
+/** easy: 遊んでいる間もルールが見える。hard: 見えない */
+export type Mode = 'easy' | 'hard';
 
 export interface View {
   screen: Screen;
   state: State;
+  mode: Mode;
+  /** 今のモードの最高記録 */
   best: number;
 }
 
@@ -14,9 +18,11 @@ export interface Dom {
   timerBar: HTMLElement;
   count: HTMLElement;
   said: HTMLElement;
+  rules: HTMLElement;
   keys: HTMLElement;
   panel: HTMLElement;
   panelBody: HTMLElement;
+  modes: HTMLElement;
   panelButton: HTMLButtonElement;
   mute: HTMLButtonElement;
 }
@@ -34,9 +40,11 @@ export function getDom(): Dom {
     timerBar: byId('timer-bar'),
     count: byId('count'),
     said: byId('said'),
+    rules: byId('rules'),
     keys: byId('keys'),
     panel: byId('panel'),
     panelBody: byId('panel-body'),
+    modes: byId('modes'),
     panelButton: byId('panel-button'),
     mute: byId('mute'),
   };
@@ -67,6 +75,20 @@ export function buildKeys(dom: Dom, onPress: (say: Say) => void): Map<Say, HTMLB
   return buttons;
 }
 
+/** モードを選ぶボタンを作る。タイトルと、終わった後の画面で出す */
+export function buildModes(dom: Dom, onMode: (mode: Mode) => void): Map<Mode, HTMLButtonElement> {
+  const buttons = new Map<Mode, HTMLButtonElement>();
+  const labels: [Mode, string][] = [['easy', 'イージー\nルールが見える'], ['hard', 'ハード\nルールが見えない']];
+  for (const [mode, label] of labels) {
+    const button = el('button', label, 'mode') as HTMLButtonElement;
+    button.type = 'button';
+    button.addEventListener('click', () => onMode(mode));
+    dom.modes.append(button);
+    buttons.set(mode, button);
+  }
+  return buttons;
+}
+
 /** どの画面を出しているかの目印。同じ間は作り直さない */
 function panelKey(view: View): string {
   if (view.screen === 'title') return 'title';
@@ -86,7 +108,8 @@ function fillPanel(dom: Dom, view: View): void {
       el('h1', 'RULE STACK'),
       el('p', '1 から 10 まで、順に押す。'),
       el('p', '1周するたびにルールが1つ増える。ルールは消えない。'),
-      el('p', 'ルールは重なる。「4 の代わりに 6」の後に「6 と 1 を入れ替える」が来たら、4 の番は 1。'),
+      el('p', 'ルールの数字は「押す数字」のこと。「何番目」ではない。'),
+      el('p', 'ルールは重なる。「4 を押す所は全部 6」の後に「6 を押す所は全部飛ばす」が来たら、元の 4 の所も 6 の所も飛ばす。'),
     );
     button = 'スタート';
   } else if (state.phase === 'rule') {
@@ -124,7 +147,7 @@ function fillPanel(dom: Dom, view: View): void {
   dom.panelButton.textContent = button;
 }
 
-const shown = { panel: '?', said: '', lap: '', best: '', count: '' };
+const shown = { panel: '?', said: '', rules: '?', mode: '', lap: '', best: '', count: '' };
 
 function setText(node: HTMLElement, key: 'lap' | 'best' | 'count', text: string): void {
   if (shown[key] === text) return;
@@ -151,6 +174,25 @@ export function render(dom: Dom, view: View): boolean {
     const chips = playing ? state.said.map((say) => el('span', sayText(say), 'chip')) : [];
     if (playing && state.phase === 'play') chips.push(el('span', '?', 'chip next'));
     dom.said.replaceChildren(...chips);
+  }
+
+  // イージーでは、数えている間もルールを見せる
+  const showRules = playing && view.mode === 'easy' && state.phase === 'play';
+  const rulesKey = showRules ? String(state.rules.length) : '';
+  if (shown.rules !== rulesKey) {
+    shown.rules = rulesKey;
+    dom.rules.hidden = !showRules || state.rules.length === 0;
+    dom.rules.replaceChildren(...(showRules ? state.rules.map((rule) => el('li', ruleText(rule))) : []));
+  }
+
+  // モードは、タイトルと終わった後だけ選べる（遊んでいる途中では変えられない）
+  const modeKey = view.screen === 'title' || state.phase === 'over' ? view.mode : '';
+  if (shown.mode !== modeKey) {
+    shown.mode = modeKey;
+    dom.modes.hidden = modeKey === '';
+    for (const button of dom.modes.children) {
+      button.classList.toggle('on', button === dom.modes.children[view.mode === 'easy' ? 0 : 1]);
+    }
   }
 
   const key = panelKey(view);

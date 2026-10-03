@@ -68,6 +68,9 @@ html, body {
   font-weight: 700;
 }
 .chip.next { background: none; border: 2px dashed #4fc3f7; color: #4fc3f7; }
+/* イージーで、遊んでいる間に見せるルール */
+#rules { margin: 0; padding-left: 1.6em; max-width: 100%; min-height: 0; overflow-y: auto; font-size: 14px; line-height: 1.5; color: #cfd8dc; }
+#rules[hidden] { display: none; }
 
 #keys {
   display: grid;
@@ -104,14 +107,14 @@ html, body {
   text-align: center;
 }
 #panel[hidden] { display: none; }
-#panel-body { display: flex; flex-direction: column; align-items: center; gap: 12px; max-height: 70%; overflow-y: auto; }
+#panel-body { display: flex; flex-direction: column; align-items: center; gap: 12px; max-height: 65%; overflow-y: auto; }
 #panel h1 { margin: 0; font-size: 44px; letter-spacing: 2px; color: #e3f2fd; }
 #panel h2 { margin: 0; font-size: 34px; }
 #panel h2.bad { color: #ff5252; }
 #panel p { margin: 0; font-size: 17px; line-height: 1.7; color: #8fa8c7; }
 #panel .big { font-size: 34px; font-weight: 700; color: #ffd54f; line-height: 1.4; }
 #panel .score { font-size: 28px; font-weight: 700; color: #e3f2fd; }
-#panel .order { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+#panel .order { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 100%; }
 #panel .order span {
   min-width: 30px;
   padding: 4px 6px;
@@ -123,7 +126,21 @@ html, body {
 }
 #panel .order span.done { color: #66bb6a; }
 #panel .order span.miss { background: #7a2630; color: #ffffff; }
-#panel ol { margin: 0; padding-left: 1.6em; text-align: left; font-size: 17px; line-height: 1.8; color: #cfd8dc; }
+#panel ol { margin: 0; padding-left: 1.6em; max-width: 100%; text-align: left; font-size: 17px; line-height: 1.8; color: #cfd8dc; }
+#modes { display: flex; gap: 8px; }
+#modes[hidden] { display: none; }
+.mode {
+  padding: 10px 14px;
+  border: 1px solid #3d6090;
+  border-radius: 10px;
+  background: #1c2e45;
+  color: #8fa8c7;
+  font-size: 15px;
+  line-height: 1.4;
+  white-space: pre-line;
+  cursor: pointer;
+}
+.mode.on { background: #2a4a70; border-color: #4fc3f7; color: #e3f2fd; font-weight: 700; }
 #panel-button {
   min-width: 200px;
   height: 60px;

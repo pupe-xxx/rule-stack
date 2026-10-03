@@ -6,7 +6,7 @@ import { createLoop } from './kit/loop';
 import { loadPlatform } from './kit/platform';
 import { createRng, type Rng } from './kit/rng';
 import { createSave } from './kit/save';
-import { buildKeys, getDom, render, type Screen } from './ui/render';
+import { buildKeys, buildModes, getDom, render, type Mode, type Screen } from './ui/render';
 
 /** 画面が切り替わった直後は、この間だけ下のボタンを押せない（数字を連打した指で、読まずに進めないように） */
 const PANEL_WAIT_MS = 600;
@@ -19,8 +19,10 @@ async function start(): Promise<void> {
   await platform.init();
 
   const sound = createSound();
-  const save = createSave('rule-stack.v1', { best: 0, muted: false });
+  // best はハードの最高記録（モードを足す前の記録は、ルールが見えない遊び方のもの）
+  const save = createSave('rule-stack.v1', { best: 0, bestEasy: 0, mode: 'hard' as Mode, muted: false });
   const record = save.load();
+  const bestKey = () => (record.mode === 'easy' ? 'bestEasy' : 'best');
   sound.setMuted(record.muted);
 
   let rng: Rng = createRng();
@@ -35,8 +37,8 @@ async function start(): Promise<void> {
   };
 
   const finish = () => {
-    if (state.cleared > record.best) {
-      record.best = state.cleared;
+    if (state.cleared > record[bestKey()]) {
+      record[bestKey()] = state.cleared;
       save.save(record);
     }
     sound.tone(140, 450, 0.3);
@@ -58,6 +60,11 @@ async function start(): Promise<void> {
   };
 
   const keys = buildKeys(dom, onPress);
+  buildModes(dom, (mode) => {
+    if (busy) return;
+    record.mode = mode;
+    save.save(record);
+  });
 
   const begin = async () => {
     if (busy) return;
@@ -111,7 +118,7 @@ async function start(): Promise<void> {
   };
 
   const draw = () => {
-    const panelChanged = render(dom, { screen, state, best: record.best });
+    const panelChanged = render(dom, { screen, state, mode: record.mode, best: record[bestKey()] });
     if (panelChanged && screen === 'game') {
       dom.panelButton.disabled = true;
       setTimeout(() => {

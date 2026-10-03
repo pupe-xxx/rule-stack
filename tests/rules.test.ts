@@ -62,8 +62,9 @@ describe('1周で押す順番', () => {
   });
 
   it('説明の文', () => {
-    expect(ruleText({ kind: 'replace', a: 2, b: 5 })).toBe('2 の代わりに 5');
-    expect(ruleText({ kind: 'swap', a: 4, b: 8 })).toBe('4 と 8 を入れ替える');
+    expect(ruleText({ kind: 'replace', a: 2, b: 5 })).toBe('2 を押す所は全部 5');
+    expect(ruleText({ kind: 'skip', a: 2 })).toBe('2 を押す所は全部飛ばす');
+    expect(ruleText({ kind: 'swap', a: 4, b: 8 })).toBe('4 を押す所と 8 を押す所を全部入れ替える');
   });
 });
 

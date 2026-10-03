@@ -162,13 +162,17 @@ export function createRule(rules: readonly Rule[], rng: Rng): Rule | null {
   return null;
 }
 
+/**
+ * ルールの文。数字は「押す数字」を指し、「何番目」ではない。
+ * 「2 は飛ばす」だけだと「2番目を飛ばす」とも読めるので、「押す所は全部」と書く
+ */
 export function ruleText(rule: Rule): string {
   switch (rule.kind) {
-    case 'replace': return `${rule.a} の代わりに ${rule.b}`;
-    case 'skip': return `${rule.a} は飛ばす`;
-    case 'double': return `${rule.a} は2回`;
-    case 'swap': return `${rule.a} と ${rule.b} を入れ替える`;
-    case 'star': return `${rule.a} の代わりに ★`;
+    case 'replace': return `${rule.a} を押す所は全部 ${rule.b}`;
+    case 'skip': return `${rule.a} を押す所は全部飛ばす`;
+    case 'double': return `${rule.a} を押す所は全部2回`;
+    case 'swap': return `${rule.a} を押す所と ${rule.b} を押す所を全部入れ替える`;
+    case 'star': return `${rule.a} を押す所は全部 ★`;
   }
 }
 
